@@ -5,7 +5,8 @@ import { logger } from '../../lib/logger.js';
 /**
  * auth-service（標準 OIDC）設定：
  * - Authorization Code + PKCE S256，client_secret_basic
- * - ID token RS256，驗證 issuer / audience / exp / nonce（openid-client 處理）
+ * - ID token RS256：用 auth-service 的 JWKS 公鑰驗簽章（enableNonRepudiationChecks），
+ *   並驗 issuer / audience / exp / iat / nonce（openid-client 處理）
  * - 角色從 UserInfo 的 `roles` 取得（需 profile scope）
  */
 let configPromise: Promise<client.Configuration> | undefined;
@@ -19,8 +20,16 @@ export function oidcConfiguration(): Promise<client.Configuration> {
       c.OIDC_CLIENT_ID,
       { id_token_signed_response_alg: 'RS256' },
       client.ClientSecretBasic(c.OIDC_CLIENT_SECRET),
-      // auth-service 本機開發只允許 localhost 走 http
-      c.OIDC_ISSUER.startsWith('http://') ? { execute: [client.allowInsecureRequests] } : undefined,
+      {
+        execute: [
+          // openid-client v6 預設不驗 ID token 簽章（只靠 HTTPS 確認來源），要明確開啟才會用 JWKS 公鑰驗。
+          // auth-service 串接文件要求驗簽章；本機開發的 http issuer 沒有 HTTPS 保護，更需要。
+          // 公鑰在第一次登入時下載，記憶體快取 5 分鐘；遇到不認得的 kid 會重新下載（金鑰輪替）。
+          client.enableNonRepudiationChecks,
+          // auth-service 本機開發只允許 localhost 走 http
+          ...(c.OIDC_ISSUER.startsWith('http://') ? [client.allowInsecureRequests] : []),
+        ],
+      },
     )
     .catch((err) => {
       configPromise = undefined; // 下次重試 discovery

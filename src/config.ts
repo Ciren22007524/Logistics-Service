@@ -58,16 +58,20 @@ const schema = z.object({
   CREDENTIALS_ENC_KEYS: z.string().min(1, 'CREDENTIALS_ENC_KEYS 必填，可用 npm run gen:key 產生'),
 
   // --- auth-service（oauth2 分支：純 OAuth 2.0；OIDC_* 名稱與 main 分支共用同一份 .env） ---
+  /** auth-service 的網址（issuer）；變數名稱與 main 分支共用，本分支不使用 OIDC */
   OIDC_ISSUER: z.string().url().default('http://localhost:3000'),
   /** OAuth 2.0 client（在 auth-service 另外註冊；main 分支用 OIDC_CLIENT_*） */
   OAUTH2_CLIENT_ID: z.string().default(''),
   OAUTH2_CLIENT_SECRET: z.string().default(''),
   /** 不含 openid；就算設定裡寫了也會被拿掉 */
   OAUTH2_SCOPES: z.string().default('email profile'),
+  /** 端點：預設照 auth-service「純 OAuth 2.0 串接」文件（OIDC_ISSUER + /oidc/auth 等），不使用 OIDC Discovery */
+  OAUTH2_AUTHORIZATION_ENDPOINT: z.string().url().optional(),
+  OAUTH2_TOKEN_ENDPOINT: z.string().url().optional(),
+  OAUTH2_USER_DATA_ENDPOINT: z.string().url().optional(),
+  OAUTH2_REVOCATION_ENDPOINT: z.string().url().optional(),
   /** 必須與 auth-service 註冊的回呼完全相同；預設 PUBLIC_BASE_URL + /auth/callback */
   OIDC_REDIRECT_URI: z.string().url().optional(),
-  /** 有在 auth-service 登記 post_logout_redirect_uris 才設定；未設時「全站登出」不帶導回 */
-  OIDC_POST_LOGOUT_REDIRECT_URI: z.string().url().optional(),
   /** 允許進後台的 email（白名單）；與 ADMIN_ROLES 任一符合即可 */
   ADMIN_EMAILS: list,
   /** auth-service UserInfo `roles` 中任一符合即可進後台 */

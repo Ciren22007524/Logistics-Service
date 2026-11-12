@@ -110,13 +110,22 @@ describe.skipIf(!DB || !REDIS)('OAuth 2.0 login', () => {
     expect(again.headers.location).toBe(`${BASE}/login?error=login_expired`);
   });
 
-  it('登出：撤銷 access token；全站登出只帶 client_id', async () => {
+  it('登出：撤銷 access token（RFC 7009）；沒有 OIDC 全站登出', async () => {
     const { session } = await login();
     const r = (await app.inject({ method: 'POST', url: '/auth/logout', headers: { cookie: session! }, payload: { global: true } })).json();
-    expect(r.token_revoked).toBe(true);
-    expect(r.end_session_url).toContain('client_id=logistics-oauth2');
-    expect(r.end_session_url).not.toContain('id_token_hint=');
+    expect(r).toEqual({ ok: true, token_revoked: true });
     expect(as.revoked).toContain('logistics-oauth2');
     expect((await app.inject({ method: 'GET', url: '/auth/me', headers: { cookie: session! } })).statusCode).toBe(401);
+  });
+
+  it('整個測試過程，本服務沒有碰任何 OIDC 專屬端點', async () => {
+    // 授權伺服器收到的請求：只有授權頁（含互動頁）、token、使用者資料、撤銷
+    const oidcOnly = ['/.well-known/openid-configuration', '/oidc/jwks', '/oidc/session/end'];
+    for (const p of oidcOnly) expect(as.requests, p).not.toContain(p);
+    // /interaction/* 與 /oidc/auth/{uid} 是瀏覽器在授權頁上的登入、同意與續接步驟
+    const used = new Set(
+      as.requests.map((p) => p.replace(/^\/oidc\/auth\/[^/]+$/, '/oidc/auth')).filter((p) => !p.startsWith('/interaction/')),
+    );
+    expect([...used].sort()).toEqual(['/oidc/auth', '/oidc/token', '/oidc/token/revocation', '/oidc/userinfo']);
   });
 });

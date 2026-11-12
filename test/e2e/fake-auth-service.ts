@@ -13,6 +13,8 @@ export interface FakeAuthService {
   issuer: string;
   close: () => Promise<void>;
   revoked: string[];
+  /** 收到的每個請求路徑（驗證 OAuth 2.0 版本沒有碰 OIDC 端點） */
+  requests: string[];
 }
 
 export const ACCOUNTS: Record<string, { email: string; name: string; roles: string[] }> = {
@@ -22,6 +24,7 @@ export const ACCOUNTS: Record<string, { email: string; name: string; roles: stri
 
 export async function startFakeAuthService(redirectUri: string): Promise<FakeAuthService> {
   const revoked: string[] = [];
+  const requests: string[] = [];
   // 先拿到 port 才能決定 issuer
   const { createServer } = await import('node:http');
   const server: Server = createServer();
@@ -56,6 +59,15 @@ export async function startFakeAuthService(redirectUri: string): Promise<FakeAut
       revocation: { enabled: true },
       rpInitiatedLogout: { enabled: true },
     },
+    // 端點路徑與 auth-service 相同（src/oidc/provider.ts 的 /oidc 前綴）
+    routes: {
+      authorization: '/oidc/auth',
+      token: '/oidc/token',
+      userinfo: '/oidc/userinfo',
+      revocation: '/oidc/token/revocation',
+      end_session: '/oidc/session/end',
+      jwks: '/oidc/jwks',
+    },
     // 只發不透明 access token（與 auth-service 不帶 resource 時相同）
     ttl: { AccessToken: 900 },
   });
@@ -65,7 +77,7 @@ export async function startFakeAuthService(redirectUri: string): Promise<FakeAut
 
   // 純 OAuth 2.0 的 UserInfo：token 沒有 openid scope 時自己回 claims（auth-service userinfo.ts 的簡化版）
   provider.use(async (ctx, next) => {
-    if (ctx.path !== '/me' || ctx.method !== 'GET') return next();
+    if (ctx.path !== '/oidc/userinfo' || ctx.method !== 'GET') return next();
     const m = /^Bearer (.+)$/.exec(ctx.get('authorization'));
     const token = m ? await provider.AccessToken.find(m[1]!) : undefined;
     if (!token || !token.isValid) {
@@ -81,10 +93,15 @@ export async function startFakeAuthService(redirectUri: string): Promise<FakeAut
     ctx.body = body;
   });
 
-  server.on('request', provider.callback());
+  const handle = provider.callback();
+  server.on('request', (req, res) => {
+    requests.push(new URL(req.url ?? '/', issuer).pathname);
+    return handle(req, res);
+  });
   return {
     issuer,
     revoked,
+    requests,
     close: () => new Promise<void>((r) => server.close(() => r())),
   };
 }

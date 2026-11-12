@@ -37,9 +37,9 @@ function RequireLogin() {
 }
 
 function Layout({ me }: { me: Me }) {
-  const logout = async (global: boolean) => {
-    const r = await api<{ end_session_url: string | null }>('/auth/logout', { method: 'POST', json: { global } });
-    window.location.href = r.end_session_url ?? '/login';
+  const logout = async () => {
+    await api('/auth/logout', { method: 'POST', json: {} });
+    window.location.href = '/login';
   };
   return (
     <div className="layout">
@@ -61,12 +61,8 @@ function Layout({ me }: { me: Me }) {
           {me.email && me.name && <div>{me.email}</div>}
           {me.dev_bypass && <div className="badge warn">開發登入</div>}
           <div className="row">
-            <button className="small" onClick={() => logout(false)}>登出</button>
-            {!me.dev_bypass && (
-              <button className="small" onClick={() => logout(true)} title="同時登出 auth-service">
-                全站登出
-              </button>
-            )}
+            <button className="small" onClick={logout}>登出</button>
+            {/* 純 OAuth 2.0 沒有全站登出（end_session 屬於 OIDC），登出時會撤銷 access token */}
           </div>
         </div>
       </aside>

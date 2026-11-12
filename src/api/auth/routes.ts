@@ -5,7 +5,7 @@ import { audit } from '../../infra/db/repositories.js';
 import { db } from '../../infra/db/pool.js';
 import { redis } from '../../infra/redis.js';
 import { HttpError } from '../../lib/errors.js';
-import { endSessionUrl, finishLogin, isAdminAllowed, revokeAccessToken, startLogin, type LoginTransaction } from './oauth2.js';
+import { finishLogin, isAdminAllowed, revokeAccessToken, startLogin, type LoginTransaction } from './oauth2.js';
 import { createSession, destroySession, loadSession, loginTxCookieName } from './session.js';
 
 /** 只允許站內相對路徑，避免 open redirect */
@@ -86,12 +86,13 @@ export async function authRoutes(app: FastifyInstance) {
     return { sub: s.sub, email: s.email, name: s.name, roles: s.roles, csrf_token: s.csrf, dev_bypass: Boolean(s.devBypass) };
   });
 
-  /** 登出本站並撤銷 access token；body.global=true 時回傳 auth-service 的 end_session 網址讓前端導過去 */
-  app.post<{ Body: { global?: boolean } | undefined }>('/auth/logout', async (req, reply) => {
+  /**
+   * 登出本站並撤銷 access token（RFC 7009）。
+   * 純 OAuth 2.0 沒有「全站登出」：end_session 是 OIDC RP-Initiated Logout，本分支不使用。
+   */
+  app.post('/auth/logout', async (req, reply) => {
     const s = await destroySession(req, reply);
-    const global = Boolean(req.body && (req.body as { global?: boolean }).global);
     const revoked = s && !s.devBypass ? await revokeAccessToken(s.accessToken) : false;
-    const url = global && s && !s.devBypass ? await endSessionUrl() : null;
-    return { ok: true, token_revoked: revoked, end_session_url: url };
+    return { ok: true, token_revoked: revoked };
   });
 }

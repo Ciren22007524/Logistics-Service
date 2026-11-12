@@ -51,8 +51,10 @@ npm run dev                   # 建置前端後啟動後端（程式改動自動
 | `.env` client | `OIDC_CLIENT_ID`／`OIDC_CLIENT_SECRET` | `OAUTH2_CLIENT_ID`／`OAUTH2_CLIENT_SECRET` |
 | 請求 scope | `openid email profile` | `email profile`（程式保證不送 `openid`） |
 | nonce／ID token | 有，驗 RS256 簽章、iss、aud、exp、nonce | 沒有 |
-| 身分來源 | ID token 的 `sub`（再以 UserInfo 補資料） | access token 呼叫 `/oidc/userinfo` |
-| 登出 | 全站登出帶 `id_token_hint` | 撤銷 access token；全站登出只帶 `client_id` |
+| 身分來源 | ID token 的 `sub`（再以 UserInfo 補資料） | Bearer access token 呼叫 auth-service 的使用者資料 API（RFC 6750） |
+| 端點來源 | OIDC Discovery（`/.well-known/openid-configuration`） | 依 auth-service 文件明確設定，不讀 Discovery |
+| 實作 | `openid-client` | 不用任何 OIDC 函式庫，以 `fetch` 依 RFC 6749／7636／6750／7009／9207 實作 |
+| 登出 | 撤銷 token；全站登出帶 `id_token_hint`（OIDC RP-Initiated Logout） | 撤銷 access token（RFC 7009）；沒有全站登出 |
 | 共通 | Authorization Code + PKCE S256 + state、`client_secret_basic`、同一個回呼、`roles` 來自 UserInfo、相同後台授權規則 | 同左 |
 
 後台採 BFF 模式：授權碼交換與 token 都在後端，瀏覽器只拿 HttpOnly、SameSite=Lax 的 session cookie（存在 Redis）。
@@ -61,6 +63,8 @@ npm run dev                   # 建置前端後啟動後端（程式改動自動
 2. 回呼網址填 `http://localhost:4310/auth/callback`（正式環境填 `https://<網域>/auth/callback`）；預設是 `PUBLIC_BASE_URL` + `/auth/callback`，必須完全一致
 3. 把 client ID／secret 填到 `.env` 的 `OAUTH2_CLIENT_ID`、`OAUTH2_CLIENT_SECRET`（secret 只放 `.env`／Secret 管理，不進版控）
 4. 設定誰能進後台：`ADMIN_EMAILS`（已驗證 email 白名單）或 `ADMIN_ROLES`（auth-service 管理者在該 client 設的 `roles`）。兩者都空時，非 production 放行所有登入者，production 一律拒絕
+
+**保證不混用 OIDC**：`test/unit/oauth2.test.ts` 檢查登入程式不 import 任何 OIDC 函式庫、授權網址不含 `openid`／nonce、收到 ID token 直接拒絕；`test/e2e/sso.test.ts` 記錄授權伺服器收到的每個請求，確認沒有碰 Discovery、JWKS、end_session。auth-service 的端點都在 `/oidc/` 前綴底下只是路徑命名，不帶 `openid` 的 token 呼叫 `/oidc/userinfo` 時，auth-service 走的是它自訂的 OAuth 使用者資料 API。
 
 auth-service 的 `subject_type` 是 public，同一個使用者在兩個 client 拿到相同的 `sub`，兩個分支的資料可以用同一個主鍵對應。
 

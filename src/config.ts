@@ -22,10 +22,20 @@ const schema = z.object({
   PORT: z.coerce.number().int().default(4310),
   /** 對外網址（物流商回調、選店導回、OIDC callback 都以此為準） */
   PUBLIC_BASE_URL: z.string().url().default('http://localhost:4310'),
-  /** 後台前端網址；開發時是 Vite（5310），正式環境與 PUBLIC_BASE_URL 相同 */
-  ADMIN_WEB_URL: z.string().url().default('http://localhost:5310'),
-  /** 正式環境由 API 直接提供 web/dist；開發時用 Vite */
-  SERVE_WEB: bool,
+  /** 後台前端網址；預設與 PUBLIC_BASE_URL 相同（由 API 直接提供 web/dist）。只有另開 Vite 開發伺服器時才需要設 */
+  ADMIN_WEB_URL: z.string().url().optional(),
+  /** 由 API 直接提供建置好的後台（web/dist）；預設開啟，設 false 關閉 */
+  SERVE_WEB: z
+    .string()
+    .optional()
+    .transform((v) => v !== 'false'),
+  /** 前端靜態檔位置，預設 ./web/dist */
+  WEB_DIST_DIR: z.string().default('web/dist'),
+  /** 在 API 程序內一併執行背景任務；預設開啟。分開部署 Worker（npm run start:worker）時設 false */
+  RUN_WORKER: z
+    .string()
+    .optional()
+    .transform((v) => v !== 'false'),
   TRUST_PROXY: bool,
 
   DATABASE_URL: z.string().default('postgresql://logistics:logistics-local-only@127.0.0.1:25432/logistics'),
@@ -51,8 +61,8 @@ const schema = z.object({
   OIDC_ISSUER: z.string().url().default('http://localhost:3000'),
   OIDC_CLIENT_ID: z.string().default(''),
   OIDC_CLIENT_SECRET: z.string().default(''),
-  /** 必須與 auth-service 註冊的回呼完全相同 */
-  OIDC_REDIRECT_URI: z.string().url().default('http://localhost:5310/auth/callback'),
+  /** 必須與 auth-service 註冊的回呼完全相同；預設 PUBLIC_BASE_URL + /auth/callback */
+  OIDC_REDIRECT_URI: z.string().url().optional(),
   OIDC_SCOPES: z.string().default('openid email profile'),
   /** 有在 auth-service 登記 post_logout_redirect_uris 才設定；未設時「全站登出」不帶導回 */
   OIDC_POST_LOGOUT_REDIRECT_URI: z.string().url().optional(),
@@ -84,7 +94,9 @@ const schema = z.object({
     .transform((v) => (v === undefined ? undefined : v === 'true')),
 });
 
-export type Config = z.infer<typeof schema> & {
+export type Config = Omit<z.infer<typeof schema>, 'ADMIN_WEB_URL' | 'OIDC_REDIRECT_URI'> & {
+  ADMIN_WEB_URL: string;
+  OIDC_REDIRECT_URI: string;
   isProduction: boolean;
   mockCarrierEnabled: boolean;
   oidcEnabled: boolean;
@@ -104,6 +116,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const isProduction = c.APP_ENV === 'production';
   return {
     ...c,
+    ADMIN_WEB_URL: c.ADMIN_WEB_URL ?? c.PUBLIC_BASE_URL,
+    OIDC_REDIRECT_URI: c.OIDC_REDIRECT_URI ?? new URL('/auth/callback', c.PUBLIC_BASE_URL).toString(),
     isProduction,
     mockCarrierEnabled: c.ENABLE_MOCK_CARRIER ?? !isProduction,
     oidcEnabled: Boolean(c.OIDC_CLIENT_ID && c.OIDC_CLIENT_SECRET),

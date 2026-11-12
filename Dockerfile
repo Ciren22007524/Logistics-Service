@@ -1,10 +1,9 @@
-# API 與 Worker 共用同一個 image，以 command 區分（docker-compose.yml）
+# 單一 image：後端伺服器同時提供 API、後台靜態檔與背景任務；也可用 command 分開跑 Worker
 FROM node:22-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
+COPY web/package.json ./web/
 RUN npm ci
-COPY web/package.json web/package-lock.json ./web/
-RUN npm --prefix web ci
 COPY . .
 RUN npm run build && npm prune --omit=dev
 

@@ -19,7 +19,7 @@ try {
   } else {
     const result = await tx(async (c) => {
       const tenant = await createTenant(
-        { name: '預設租戶', webhook_url: null, store_map_return_origins: ['http://localhost:5310'] },
+        { name: '預設租戶', webhook_url: null, store_map_return_origins: ['http://localhost:4310'] },
         c,
       );
       const { key } = await createApiKey(tenant.id, 'seed', c);

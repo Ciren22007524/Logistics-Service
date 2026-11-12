@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path';
 import cookie from '@fastify/cookie';
 import formbody from '@fastify/formbody';
 import fastifyStatic from '@fastify/static';
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyReply } from 'fastify';
 import { ZodError } from 'zod';
 import { adminRoutes } from '../admin/routes.js';
 import { config } from '../config.js';
@@ -70,18 +70,38 @@ export async function buildApp(opts: { logger?: boolean } = {}): Promise<Fastify
   await app.register(adminRoutes, { prefix: '/admin/api' });
   await app.register(publicRoutes);
 
-  // 正式環境由 API 直接提供後台前端（同源，不需 CORS）
-  const webDist = resolve(process.cwd(), 'web/dist');
-  if (c.SERVE_WEB && existsSync(webDist)) {
-    await app.register(fastifyStatic, { root: webDist, prefix: '/', wildcard: false });
-    app.setNotFoundHandler((req, reply) => {
-      const apiPrefixes = ['/v1', '/admin/api', '/auth', '/callbacks', '/cvs', '/healthz'];
-      if (req.method === 'GET' && !apiPrefixes.some((p) => req.url.startsWith(p)))
-        return reply.type('text/html').sendFile('index.html', join(webDist));
-      return reply.code(404).send({ error: { code: 'not_found', message: 'route not found' } });
+  // 由 API 直接提供建置好的後台（同源，不需 CORS，也不用另外開前端伺服器）
+  const webDist = resolve(process.cwd(), c.WEB_DIST_DIR);
+  const notFound = { error: { code: 'not_found', message: 'route not found' } };
+  if (c.SERVE_WEB && existsSync(join(webDist, 'index.html'))) {
+    await app.register(fastifyStatic, {
+      root: webDist,
+      prefix: '/',
+      wildcard: false,
+      index: false,
+      cacheControl: false,
+      setHeaders: (res, path) => {
+        // Vite 產出的 assets 檔名含 hash，可長期快取；index.html 每次都要重新取得
+        const isHashed = path.startsWith(join(webDist, 'assets'));
+        res.setHeader('cache-control', isHashed ? 'public, max-age=31536000, immutable' : 'no-cache');
+      },
     });
+    const apiPrefixes = ['/v1/', '/admin/api/', '/auth/', '/callbacks/', '/cvs/', '/mock-carrier/', '/healthz'];
+    const sendIndex = (reply: FastifyReply) =>
+      reply.header('cache-control', 'no-cache').type('text/html; charset=utf-8').sendFile('index.html');
+    app.get('/', (_req, reply) => sendIndex(reply));
+    // SPA：前端路由（/shipments/xxx 等）重新整理時回 index.html
+    app.setNotFoundHandler((req, reply) => {
+      const path = req.url.split('?')[0]!;
+      const isApi = apiPrefixes.some((p) => path === p.replace(/\/$/, '') || path.startsWith(p));
+      const isAsset = /\.[a-z0-9]+$/i.test(path);
+      if ((req.method === 'GET' || req.method === 'HEAD') && !isApi && !isAsset) return sendIndex(reply);
+      return reply.code(404).send(notFound);
+    });
+    app.log.info({ dir: webDist }, 'serving admin web');
   } else {
-    app.setNotFoundHandler((_req, reply) => reply.code(404).send({ error: { code: 'not_found', message: 'route not found' } }));
+    if (c.SERVE_WEB) app.log.warn({ dir: webDist }, 'web/dist not found; run `npm run build:web` to serve the admin UI');
+    app.setNotFoundHandler((_req, reply) => reply.code(404).send(notFound));
   }
 
   return app;

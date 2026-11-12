@@ -8,15 +8,17 @@
     "node": ">=22"
   },
   "scripts": {
+    "dev": "npm run build:web && tsx watch --env-file-if-exists=.env src/main-api.ts",
     "dev:api": "tsx watch --env-file-if-exists=.env src/main-api.ts",
     "dev:worker": "tsx watch --env-file-if-exists=.env src/main-worker.ts",
-    "dev:web": "npm --prefix web run dev",
-    "build": "tsc -p tsconfig.build.json && npm --prefix web run build",
+    "dev:web": "npm --workspace web run dev",
+    "build": "npm run build:api && npm run build:web",
     "build:api": "tsc -p tsconfig.build.json",
-    "start:api": "node --env-file-if-exists=.env dist/main-api.js",
+    "build:web": "npm --workspace web run build",
+    "start": "node --env-file-if-exists=.env dist/main-api.js",
     "start:worker": "node --env-file-if-exists=.env dist/main-worker.js",
-    "db:migrate": "tsx --env-file-if-exists=.env src/main-migrate.ts",
     "start:migrate": "node --env-file-if-exists=.env dist/main-migrate.js",
+    "db:migrate": "tsx --env-file-if-exists=.env src/main-migrate.ts",
     "db:seed": "tsx --env-file-if-exists=.env scripts/seed.ts",
     "credentials:rotate": "tsx --env-file-if-exists=.env scripts/rotate-credentials.ts",
     "gen:key": "node -e \"console.log(require('node:crypto').randomBytes(32).toString('base64'))\"",
@@ -52,5 +54,8 @@
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.72.2",
     "vitest": "^3.2.7"
-  }
+  },
+  "workspaces": [
+    "web"
+  ]
 }

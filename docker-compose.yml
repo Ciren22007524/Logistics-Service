@@ -5,11 +5,11 @@
 #   Redis             26379  LOGISTICS_REDIS_PORT     6379
 #   MinIO S3 API      29000  LOGISTICS_MINIO_PORT     9000
 #   MinIO Console     29001  LOGISTICS_MINIO_CONSOLE  9001
-#   Logistics API     4310   LOGISTICS_API_PORT       4310   （profile: app）
-#   後台前端（Vite）  5310   在主機跑 npm run dev:web
+#   後端伺服器        4310   LOGISTICS_API_PORT       4310   （profile: app；含後台頁面）
+#   （選用）Vite      5310   只有改前端要熱更新時才開 npm run dev:web
 #
-# 只要基礎服務（API/Worker 在主機用 npm run dev:*）：docker compose up -d --wait
-# 整套用容器跑：                                    docker compose --profile app up --build -d
+# 只要基礎服務（後端在主機用 npm run dev）：docker compose up -d --wait
+# 整套用容器跑：                             docker compose --profile app up --build -d
 # 連接埠只綁 127.0.0.1；密碼僅供本機，正式環境請另設。
 name: logistics-service
 
@@ -89,7 +89,8 @@ services:
       <<: *container-env
       HOST: 0.0.0.0
       PORT: 4310
-      SERVE_WEB: 'true'
+      # 背景任務由下面的 worker 容器負責
+      RUN_WORKER: 'false'
     ports:
       - '127.0.0.1:${LOGISTICS_API_PORT:-4310}:4310'
     depends_on:

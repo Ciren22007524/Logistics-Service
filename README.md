@@ -15,30 +15,39 @@ auth-service 本機用 `3000`、`5432`、`16379`，本服務全部改用以下�
 | PostgreSQL | `25432` | `LOGISTICS_PG_PORT` |
 | Redis | `26379` | `LOGISTICS_REDIS_PORT` |
 | MinIO S3 API／Console | `29000`／`29001` | `LOGISTICS_MINIO_PORT`／`LOGISTICS_MINIO_CONSOLE` |
-| Logistics API | `4310` | `PORT`（compose：`LOGISTICS_API_PORT`） |
-| 後台前端（Vite） | `5310` | `LOGISTICS_WEB_PORT` |
+| 後端伺服器（API＋後台頁面） | `4310` | `PORT`（compose：`LOGISTICS_API_PORT`） |
+| （選用）Vite 熱更新 | `5310` | `LOGISTICS_WEB_PORT` |
 
 ## 本機開發
 
+前端會建置成靜態檔（`web/dist`），由後端直接提供；背景任務預設也在同一個程序內執行。**只要開後端伺服器一個程序**，瀏覽器開 `http://localhost:4310` 就是後台。
+
 ```bash
-npm install && npm --prefix web install
+npm install                   # npm workspaces：一次裝好後端與前端套件
 cp .env.example .env          # 填 CREDENTIALS_ENC_KEYS（npm run gen:key）
 docker compose up -d --wait   # PostgreSQL、Redis、MinIO
 npm run db:migrate
 npm run db:seed               # 建立租戶、API key、MOCK 與綠界測試帳號（印出一次 API key）
-npm run dev:api               # http://localhost:4310
-npm run dev:worker
-npm run dev:web               # http://localhost:5310（/auth、/admin/api、/v1… 轉給 API）
+npm run dev                   # 建置前端後啟動後端（程式改動自動重啟）→ http://localhost:4310
 ```
 
-整套用容器跑（API 會一併提供建置好的後台）：`docker compose --profile app up --build -d`。
+正式環境：`npm run build`（後端＋前端）後 `npm start`。
+
+| 情境 | 做法 |
+| --- | --- |
+| 改了前端，想看結果 | `npm run build:web`，重新整理頁面即可（後端不用重開） |
+| 前端要熱更新 | 另開 `npm run dev:web`（`5310`），並在 `.env` 設 `ADMIN_WEB_URL=http://localhost:5310`、`OIDC_REDIRECT_URI=http://localhost:5310/auth/callback` |
+| Worker 分開部署 | 後端設 `RUN_WORKER=false`，另跑 `npm run start:worker`（任務可重入，多個程序同時跑也不會重複處理） |
+| 不提供後台頁面 | `SERVE_WEB=false` |
+
+整套用容器跑：`docker compose --profile app up --build -d`（API 容器提供後台，Worker 另一個容器）。
 
 ## 登入：串接 auth-service（OIDC）
 
 後台採 BFF 模式：授權碼交換與 token 都在後端，瀏覽器只拿 HttpOnly、SameSite=Lax 的 session cookie（存在 Redis）。
 
 1. 到 auth-service 的 `/register` 用 Google 登入，串接方式選**後端**（`client_secret_basic`），scope 勾 `email`、`profile`
-2. 回呼網址填 `http://localhost:5310/auth/callback`（正式環境填 `https://<網域>/auth/callback`），必須和 `OIDC_REDIRECT_URI` 完全一致
+2. 回呼網址填 `http://localhost:4310/auth/callback`（正式環境填 `https://<網域>/auth/callback`）；預設是 `PUBLIC_BASE_URL` + `/auth/callback`，必須完全一致
 3. 把 client ID／secret 填到 `.env` 的 `OIDC_CLIENT_ID`、`OIDC_CLIENT_SECRET`（secret 只放 `.env`／Secret 管理，不進版控）
 4. 設定誰能進後台：`ADMIN_EMAILS`（已驗證 email 白名單）或 `ADMIN_ROLES`（auth-service 管理者在該 client 設的 `roles`）。兩者都空時，非 production 放行所有登入者，production 一律拒絕
 
@@ -98,7 +107,7 @@ const ok = crypto.createHmac('sha256', secret).update(rawBody).digest('hex') ===
 - 狀態更新與 outbox 事件同一個 transaction；所有 worker 任務可重入
 - 綠界狀態碼對照在 `src/carriers/ecpay-cvs/status-map.ts`，未列的代碼只記錄、不推進。**上線前請以綠界最新狀態碼表核對**
 
-## 背景任務（`npm run dev:worker`）
+## 背景任務（預設在後端程序內；`RUN_WORKER=false` 時改用 `npm run start:worker`）
 
 | 任務 | 觸發 |
 | --- | --- |

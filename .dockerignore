@@ -1,0 +1,9 @@
+node_modules
+web/node_modules
+dist
+web/dist
+.env
+.env.*
+.git
+coverage
+data

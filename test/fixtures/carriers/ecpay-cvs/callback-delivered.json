@@ -1,0 +1,19 @@
+{
+  "MerchantID": "2000933",
+  "MerchantTradeNo": "LS0123456789ABCDEF01",
+  "RtnCode": "2067",
+  "RtnMsg": "消費者成功取件",
+  "AllPayLogisticsID": "1718546",
+  "LogisticsType": "CVS",
+  "LogisticsSubType": "UNIMARTC2C",
+  "GoodsAmount": "1500",
+  "UpdateStatusDate": "2026/11/14 15:30:12",
+  "ReceiverName": "王小明",
+  "ReceiverPhone": "",
+  "ReceiverCellPhone": "0912345678",
+  "ReceiverEmail": "",
+  "ReceiverAddress": "",
+  "CVSPaymentNo": "C9876543",
+  "CVSValidationNo": "1234",
+  "BookingNote": ""
+}

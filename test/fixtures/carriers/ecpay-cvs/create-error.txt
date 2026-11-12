@@ -1,0 +1,1 @@
+0|ReceiverName 長度不符合規則

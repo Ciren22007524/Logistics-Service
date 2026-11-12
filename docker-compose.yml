@@ -1,0 +1,124 @@
+# 物流服務本機環境。為避開本機既有服務（auth-service 用 3000 / 5432 / 16379），全部改用不常見的連接埠：
+#
+#   服務              主機連接埠（可用 .env 覆寫）   容器內
+#   PostgreSQL        25432  LOGISTICS_PG_PORT        5432
+#   Redis             26379  LOGISTICS_REDIS_PORT     6379
+#   MinIO S3 API      29000  LOGISTICS_MINIO_PORT     9000
+#   MinIO Console     29001  LOGISTICS_MINIO_CONSOLE  9001
+#   後端伺服器        4310   LOGISTICS_API_PORT       4310   （profile: app；含後台頁面）
+#   （選用）Vite      5310   只有改前端要熱更新時才開 npm run dev:web
+#
+# 只要基礎服務（後端在主機用 npm run dev）：docker compose up -d --wait
+# 整套用容器跑：                             docker compose --profile app up --build -d
+# 連接埠只綁 127.0.0.1；密碼僅供本機，正式環境請另設。
+name: logistics-service
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: logistics
+      POSTGRES_PASSWORD: logistics-local-only
+      POSTGRES_DB: logistics
+    ports:
+      - '127.0.0.1:${LOGISTICS_PG_PORT:-25432}:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U logistics -d logistics']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    # BullMQ 需要 noeviction；開 AOF 保留佇列
+    command: ['redis-server', '--appendonly', 'yes', '--maxmemory-policy', 'noeviction']
+    ports:
+      - '127.0.0.1:${LOGISTICS_REDIS_PORT:-26379}:6379'
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  minio:
+    image: minio/minio:RELEASE.2025-04-22T22-12-26Z
+    command: ['server', '/data', '--console-address', ':9001']
+    environment:
+      MINIO_ROOT_USER: logistics
+      MINIO_ROOT_PASSWORD: logistics-local-only
+    ports:
+      - '127.0.0.1:${LOGISTICS_MINIO_PORT:-29000}:9000'
+      - '127.0.0.1:${LOGISTICS_MINIO_CONSOLE:-29001}:9001'
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ['CMD', 'mc', 'ready', 'local']
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  # ---------- 以下為 profile: app（API、Worker 容器化） ----------
+  migrate:
+    profiles: ['app']
+    build: .
+    command: ['node', 'dist/main-migrate.js']
+    env_file: .env
+    environment: &container-env
+      DATABASE_URL: postgresql://logistics:logistics-local-only@postgres:5432/logistics
+      REDIS_URL: redis://redis:6379
+      S3_ENDPOINT: http://minio:9000
+      # 簽名網址給瀏覽器用，要用主機看得到的位址
+      S3_PUBLIC_ENDPOINT: http://localhost:${LOGISTICS_MINIO_PORT:-29000}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    profiles: ['app']
+    build: .
+    command: ['node', 'dist/main-api.js']
+    env_file: .env
+    environment:
+      <<: *container-env
+      HOST: 0.0.0.0
+      PORT: 4310
+      # 背景任務由下面的 worker 容器負責
+      RUN_WORKER: 'false'
+    ports:
+      - '127.0.0.1:${LOGISTICS_API_PORT:-4310}:4310'
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    profiles: ['app']
+    build: .
+    command: ['node', 'dist/main-worker.js']
+    env_file: .env
+    environment: *container-env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_grace_period: 30s
+
+volumes:
+  postgres-data:
+  redis-data:
+  minio-data:

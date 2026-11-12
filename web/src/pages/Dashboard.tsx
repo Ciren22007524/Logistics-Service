@@ -47,7 +47,7 @@ export function DashboardPage() {
           <div className="n">{data.outbox_by_status.DEAD ?? 0}</div>
           <div className="l">Webhook 投遞失敗</div>
         </Link>
-        <Link className="stat" to="/callbacks?errors=true">
+        <Link className="stat" to="/carrier-callbacks?errors=true">
           <div className="n">{data.callback_errors_24h}</div>
           <div className="l">回調錯誤（24h）</div>
         </Link>

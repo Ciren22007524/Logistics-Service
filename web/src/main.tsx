@@ -52,7 +52,7 @@ function Layout({ me }: { me: Me }) {
           <NavLink to="/shipments">託運單</NavLink>
           <NavLink to="/shipments/new">建立測試單</NavLink>
           <NavLink to="/outbox">Webhook 事件</NavLink>
-          <NavLink to="/callbacks">物流商回調</NavLink>
+          <NavLink to="/carrier-callbacks">物流商回調</NavLink>
           <NavLink to="/tenants">租戶與 API Key</NavLink>
           <NavLink to="/carrier-accounts">物流商帳號</NavLink>
         </nav>
@@ -89,7 +89,7 @@ createRoot(document.getElementById('root')!).render(
           <Route path="/shipments/:id" element={<ShipmentDetailPage />} />
           <Route path="/store-selected" element={<StoreSelectedPage />} />
           <Route path="/outbox" element={<OutboxPage />} />
-          <Route path="/callbacks" element={<CallbacksPage />} />
+          <Route path="/carrier-callbacks" element={<CallbacksPage />} />
           <Route path="/tenants" element={<TenantsPage />} />
           <Route path="/carrier-accounts" element={<CarrierAccountsPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />

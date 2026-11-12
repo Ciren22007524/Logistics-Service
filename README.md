@@ -55,6 +55,22 @@ npm run dev                   # 建置前端後啟動後端（程式改動自動
 
 還沒註冊 client 時，本機可設 `AUTH_DEV_BYPASS=true` 直接以開發者身分登入（只在 `APP_ENV=development/test` 生效）。
 
+### OIDC 與 OAuth 2.0 並存（比較用）
+
+同一份 `.env`、同一個回呼網址，在 auth-service 註冊兩個後端 client，分別填：
+
+| 設定 | OIDC client | OAuth 2.0 client |
+| --- | --- | --- |
+| `.env` | `OIDC_CLIENT_ID`／`OIDC_CLIENT_SECRET` | `OAUTH2_CLIENT_ID`／`OAUTH2_CLIENT_SECRET` |
+| 註冊時勾的 scope | `email`、`profile`（`openid` 自動帶入） | `email`、`profile` |
+| 實際請求 scope | `openid email profile` | `email profile`（程式保證不送 `openid`） |
+| 身分來源 | RS256 ID token（驗 iss／aud／exp／nonce） | access token 呼叫 `/oidc/userinfo` |
+| 登出 | 撤銷 token；全站登出帶 `id_token_hint` | 撤銷 token；全站登出只帶 `client_id` |
+
+兩者都用 Authorization Code + PKCE S256 + state、`client_secret_basic`，角色都從 UserInfo 的 `roles` 取得，後台授權規則（`ADMIN_EMAILS`／`ADMIN_ROLES`）相同。只設其中一組也可以，登入頁只會顯示那一種。
+
+登入頁會出現「使用 OIDC 登入」「使用 OAuth 2.0 登入」兩個按鈕；後台「登入協議比較」頁（`/sso-compare`）並排列出兩種協議實際拿到的 scope、token 種類、ID token claims、UserInfo 與做過的驗證（不顯示任何 token 原文）。
+
 ## 上游 API（`/v1`）
 
 認證 `Authorization: Bearer <api_key>`；所有 POST 必帶 `Idempotency-Key`。

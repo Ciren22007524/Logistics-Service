@@ -64,6 +64,13 @@ const schema = z.object({
   /** 必須與 auth-service 註冊的回呼完全相同；預設 PUBLIC_BASE_URL + /auth/callback */
   OIDC_REDIRECT_URI: z.string().url().optional(),
   OIDC_SCOPES: z.string().default('openid email profile'),
+  /**
+   * OAuth 2.0 client（與 OIDC 共用 issuer、回呼網址與 discovery，只是另一組 client）。
+   * scope 不含 openid：不發 ID token，身分改由 access token 呼叫 UserInfo 取得。
+   */
+  OAUTH2_CLIENT_ID: z.string().default(''),
+  OAUTH2_CLIENT_SECRET: z.string().default(''),
+  OAUTH2_SCOPES: z.string().default('email profile'),
   /** 有在 auth-service 登記 post_logout_redirect_uris 才設定；未設時「全站登出」不帶導回 */
   OIDC_POST_LOGOUT_REDIRECT_URI: z.string().url().optional(),
   /** 允許進後台的 email（白名單）；與 ADMIN_ROLES 任一符合即可 */
@@ -94,12 +101,17 @@ const schema = z.object({
     .transform((v) => (v === undefined ? undefined : v === 'true')),
 });
 
+export type AuthProtocol = 'oidc' | 'oauth2';
+
 export type Config = Omit<z.infer<typeof schema>, 'ADMIN_WEB_URL' | 'OIDC_REDIRECT_URI'> & {
   ADMIN_WEB_URL: string;
   OIDC_REDIRECT_URI: string;
   isProduction: boolean;
   mockCarrierEnabled: boolean;
   oidcEnabled: boolean;
+  oauth2Enabled: boolean;
+  /** 已設定的登入協議（登入頁依此顯示按鈕） */
+  authProtocols: AuthProtocol[];
   devBypass: boolean;
   secureCookies: boolean;
 };
@@ -121,6 +133,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     isProduction,
     mockCarrierEnabled: c.ENABLE_MOCK_CARRIER ?? !isProduction,
     oidcEnabled: Boolean(c.OIDC_CLIENT_ID && c.OIDC_CLIENT_SECRET),
+    oauth2Enabled: Boolean(c.OAUTH2_CLIENT_ID && c.OAUTH2_CLIENT_SECRET),
+    authProtocols: [
+      ...(c.OIDC_CLIENT_ID && c.OIDC_CLIENT_SECRET ? (['oidc'] as const) : []),
+      ...(c.OAUTH2_CLIENT_ID && c.OAUTH2_CLIENT_SECRET ? (['oauth2'] as const) : []),
+    ],
     devBypass: c.AUTH_DEV_BYPASS && (c.APP_ENV === 'development' || c.APP_ENV === 'test'),
     secureCookies: c.PUBLIC_BASE_URL.startsWith('https://'),
   };

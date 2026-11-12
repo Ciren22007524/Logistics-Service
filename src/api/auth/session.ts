@@ -1,5 +1,5 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { config, type AuthProtocol } from '../../config.js';
+import { config } from '../../config.js';
 import { randomToken, safeEqual } from '../../infra/crypto/secrets.js';
 import { redis } from '../../infra/redis.js';
 import { HttpError } from '../../lib/errors.js';
@@ -10,10 +10,7 @@ export interface AdminSession {
   email: string | null;
   name: string | null;
   roles: string[];
-  /** 這次登入用的協議；開發登入為 undefined */
-  protocol?: AuthProtocol;
-  idToken?: string;
-  /** 只存在 Redis，登出時撤銷 */
+  /** OAuth 2.0 access token：只存在 Redis，登出時撤銷 */
   accessToken?: string;
   csrf: string;
   createdAt: string;

@@ -42,34 +42,29 @@ npm run dev                   # 建置前端後啟動後端（程式改動自動
 
 整套用容器跑：`docker compose --profile app up --build -d`（API 容器提供後台，Worker 另一個容器）。
 
-## 登入：串接 auth-service（OIDC）
+## 登入：串接 auth-service（OAuth 2.0）
+
+> 這是 **`oauth2` 分支**：與 `main` 平行、不合併，只有登入改用純 OAuth 2.0，其餘程式都和 `main` 相同。`main` 是 OIDC 版本。兩個分支共用同一份 `.env`，在 auth-service 各註冊一個 client 即可切換比較。
+
+| 項目 | `main`（OIDC） | `oauth2`（本分支） |
+| --- | --- | --- |
+| `.env` client | `OIDC_CLIENT_ID`／`OIDC_CLIENT_SECRET` | `OAUTH2_CLIENT_ID`／`OAUTH2_CLIENT_SECRET` |
+| 請求 scope | `openid email profile` | `email profile`（程式保證不送 `openid`） |
+| nonce／ID token | 有，驗 RS256 簽章、iss、aud、exp、nonce | 沒有 |
+| 身分來源 | ID token 的 `sub`（再以 UserInfo 補資料） | access token 呼叫 `/oidc/userinfo` |
+| 登出 | 全站登出帶 `id_token_hint` | 撤銷 access token；全站登出只帶 `client_id` |
+| 共通 | Authorization Code + PKCE S256 + state、`client_secret_basic`、同一個回呼、`roles` 來自 UserInfo、相同後台授權規則 | 同左 |
 
 後台採 BFF 模式：授權碼交換與 token 都在後端，瀏覽器只拿 HttpOnly、SameSite=Lax 的 session cookie（存在 Redis）。
 
 1. 到 auth-service 的 `/register` 用 Google 登入，串接方式選**後端**（`client_secret_basic`），scope 勾 `email`、`profile`
 2. 回呼網址填 `http://localhost:4310/auth/callback`（正式環境填 `https://<網域>/auth/callback`）；預設是 `PUBLIC_BASE_URL` + `/auth/callback`，必須完全一致
-3. 把 client ID／secret 填到 `.env` 的 `OIDC_CLIENT_ID`、`OIDC_CLIENT_SECRET`（secret 只放 `.env`／Secret 管理，不進版控）
+3. 把 client ID／secret 填到 `.env` 的 `OAUTH2_CLIENT_ID`、`OAUTH2_CLIENT_SECRET`（secret 只放 `.env`／Secret 管理，不進版控）
 4. 設定誰能進後台：`ADMIN_EMAILS`（已驗證 email 白名單）或 `ADMIN_ROLES`（auth-service 管理者在該 client 設的 `roles`）。兩者都空時，非 production 放行所有登入者，production 一律拒絕
 
-流程：Authorization Code + PKCE S256、`state`／`nonce`，驗證 RS256 ID token 後呼叫 `/oidc/userinfo` 取 `roles`。後台寫入 API 檢查 CSRF token 與 Origin。「登出」只清本站 session；「全站登出」另導向 auth-service 的 `end_session_endpoint`。
+auth-service 的 `subject_type` 是 public，同一個使用者在兩個 client 拿到相同的 `sub`，兩個分支的資料可以用同一個主鍵對應。
 
 還沒註冊 client 時，本機可設 `AUTH_DEV_BYPASS=true` 直接以開發者身分登入（只在 `APP_ENV=development/test` 生效）。
-
-### OIDC 與 OAuth 2.0 並存（比較用）
-
-同一份 `.env`、同一個回呼網址，在 auth-service 註冊兩個後端 client，分別填：
-
-| 設定 | OIDC client | OAuth 2.0 client |
-| --- | --- | --- |
-| `.env` | `OIDC_CLIENT_ID`／`OIDC_CLIENT_SECRET` | `OAUTH2_CLIENT_ID`／`OAUTH2_CLIENT_SECRET` |
-| 註冊時勾的 scope | `email`、`profile`（`openid` 自動帶入） | `email`、`profile` |
-| 實際請求 scope | `openid email profile` | `email profile`（程式保證不送 `openid`） |
-| 身分來源 | RS256 ID token（驗 iss／aud／exp／nonce） | access token 呼叫 `/oidc/userinfo` |
-| 登出 | 撤銷 token；全站登出帶 `id_token_hint` | 撤銷 token；全站登出只帶 `client_id` |
-
-兩者都用 Authorization Code + PKCE S256 + state、`client_secret_basic`，角色都從 UserInfo 的 `roles` 取得，後台授權規則（`ADMIN_EMAILS`／`ADMIN_ROLES`）相同。只設其中一組也可以，登入頁只會顯示那一種。
-
-登入頁會出現「使用 OIDC 登入」「使用 OAuth 2.0 登入」兩個按鈕；後台「登入協議比較」頁（`/sso-compare`）並排列出兩種協議實際拿到的 scope、token 種類、ID token claims、UserInfo 與做過的驗證（不顯示任何 token 原文）。
 
 ## 上游 API（`/v1`）
 

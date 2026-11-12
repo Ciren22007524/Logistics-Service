@@ -63,7 +63,6 @@ export interface Me {
   email: string | null;
   name: string | null;
   roles: string[];
-  protocol: 'oidc' | 'oauth2' | null;
   csrf_token: string;
   dev_bypass: boolean;
 }

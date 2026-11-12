@@ -57,8 +57,8 @@ describe.skipIf(!DB || !REDIS)('end-to-end flow', () => {
       ENABLE_MOCK_CARRIER: 'true',
       PUBLIC_BASE_URL: 'http://localhost:4310',
       ADMIN_WEB_URL: 'http://localhost:5310',
-      OIDC_CLIENT_ID: '',
-      OIDC_CLIENT_SECRET: '',
+      OAUTH2_CLIENT_ID: '',
+      OAUTH2_CLIENT_SECRET: '',
     });
     mod = {
       db: await import('../../src/infra/db/pool.js'),

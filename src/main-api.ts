@@ -19,7 +19,7 @@ async function main() {
     {
       env: c.APP_ENV,
       url: c.PUBLIC_BASE_URL,
-      oidc: c.oidcEnabled,
+      oauth2: c.oauth2Enabled,
       dev_bypass: c.devBypass,
       mock_carrier: c.mockCarrierEnabled,
       embedded_worker: Boolean(workers),

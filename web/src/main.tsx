@@ -3,7 +3,6 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter, NavLink, Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import { api, setCsrf, type Me } from './api';
 import { CallbacksPage } from './pages/Callbacks';
-import { SsoComparePage } from './pages/SsoCompare';
 import { CarrierAccountsPage } from './pages/CarrierAccounts';
 import { DashboardPage } from './pages/Dashboard';
 import { LoginPage } from './pages/Login';
@@ -56,13 +55,11 @@ function Layout({ me }: { me: Me }) {
           <NavLink to="/carrier-callbacks">物流商回調</NavLink>
           <NavLink to="/tenants">租戶與 API Key</NavLink>
           <NavLink to="/carrier-accounts">物流商帳號</NavLink>
-          <NavLink to="/sso-compare">登入協議比較</NavLink>
         </nav>
         <div className="sidebar-foot">
           <div>{me.name ?? me.email ?? me.sub}</div>
           {me.email && me.name && <div>{me.email}</div>}
           {me.dev_bypass && <div className="badge warn">開發登入</div>}
-          {me.protocol && <div className="badge brand">{me.protocol === 'oidc' ? 'OIDC' : 'OAuth 2.0'}</div>}
           <div className="row">
             <button className="small" onClick={() => logout(false)}>登出</button>
             {!me.dev_bypass && (
@@ -95,7 +92,6 @@ createRoot(document.getElementById('root')!).render(
           <Route path="/carrier-callbacks" element={<CallbacksPage />} />
           <Route path="/tenants" element={<TenantsPage />} />
           <Route path="/carrier-accounts" element={<CarrierAccountsPage />} />
-          <Route path="/sso-compare" element={<SsoComparePage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

@@ -57,20 +57,15 @@ const schema = z.object({
   /** 物流商金鑰 AES-256-GCM 金鑰（base64 32 bytes）；逗號分隔多把，第一把加密，其餘只解密（輪替用） */
   CREDENTIALS_ENC_KEYS: z.string().min(1, 'CREDENTIALS_ENC_KEYS 必填，可用 npm run gen:key 產生'),
 
-  // --- OIDC（auth-service） ---
+  // --- auth-service（oauth2 分支：純 OAuth 2.0；OIDC_* 名稱與 main 分支共用同一份 .env） ---
   OIDC_ISSUER: z.string().url().default('http://localhost:3000'),
-  OIDC_CLIENT_ID: z.string().default(''),
-  OIDC_CLIENT_SECRET: z.string().default(''),
-  /** 必須與 auth-service 註冊的回呼完全相同；預設 PUBLIC_BASE_URL + /auth/callback */
-  OIDC_REDIRECT_URI: z.string().url().optional(),
-  OIDC_SCOPES: z.string().default('openid email profile'),
-  /**
-   * OAuth 2.0 client（與 OIDC 共用 issuer、回呼網址與 discovery，只是另一組 client）。
-   * scope 不含 openid：不發 ID token，身分改由 access token 呼叫 UserInfo 取得。
-   */
+  /** OAuth 2.0 client（在 auth-service 另外註冊；main 分支用 OIDC_CLIENT_*） */
   OAUTH2_CLIENT_ID: z.string().default(''),
   OAUTH2_CLIENT_SECRET: z.string().default(''),
+  /** 不含 openid；就算設定裡寫了也會被拿掉 */
   OAUTH2_SCOPES: z.string().default('email profile'),
+  /** 必須與 auth-service 註冊的回呼完全相同；預設 PUBLIC_BASE_URL + /auth/callback */
+  OIDC_REDIRECT_URI: z.string().url().optional(),
   /** 有在 auth-service 登記 post_logout_redirect_uris 才設定；未設時「全站登出」不帶導回 */
   OIDC_POST_LOGOUT_REDIRECT_URI: z.string().url().optional(),
   /** 允許進後台的 email（白名單）；與 ADMIN_ROLES 任一符合即可 */
@@ -101,17 +96,12 @@ const schema = z.object({
     .transform((v) => (v === undefined ? undefined : v === 'true')),
 });
 
-export type AuthProtocol = 'oidc' | 'oauth2';
-
 export type Config = Omit<z.infer<typeof schema>, 'ADMIN_WEB_URL' | 'OIDC_REDIRECT_URI'> & {
   ADMIN_WEB_URL: string;
   OIDC_REDIRECT_URI: string;
   isProduction: boolean;
   mockCarrierEnabled: boolean;
-  oidcEnabled: boolean;
   oauth2Enabled: boolean;
-  /** 已設定的登入協議（登入頁依此顯示按鈕） */
-  authProtocols: AuthProtocol[];
   devBypass: boolean;
   secureCookies: boolean;
 };
@@ -132,12 +122,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     OIDC_REDIRECT_URI: c.OIDC_REDIRECT_URI ?? new URL('/auth/callback', c.PUBLIC_BASE_URL).toString(),
     isProduction,
     mockCarrierEnabled: c.ENABLE_MOCK_CARRIER ?? !isProduction,
-    oidcEnabled: Boolean(c.OIDC_CLIENT_ID && c.OIDC_CLIENT_SECRET),
     oauth2Enabled: Boolean(c.OAUTH2_CLIENT_ID && c.OAUTH2_CLIENT_SECRET),
-    authProtocols: [
-      ...(c.OIDC_CLIENT_ID && c.OIDC_CLIENT_SECRET ? (['oidc'] as const) : []),
-      ...(c.OAUTH2_CLIENT_ID && c.OAUTH2_CLIENT_SECRET ? (['oauth2'] as const) : []),
-    ],
     devBypass: c.AUTH_DEV_BYPASS && (c.APP_ENV === 'development' || c.APP_ENV === 'test'),
     secureCookies: c.PUBLIC_BASE_URL.startsWith('https://'),
   };

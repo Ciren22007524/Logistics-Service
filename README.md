@@ -53,7 +53,7 @@ npm run dev                   # 建置前端後啟動後端（程式改動自動
 | nonce／ID token | 有，驗 RS256 簽章、iss、aud、exp、nonce | 沒有 |
 | 身分來源 | ID token 的 `sub`（再以 UserInfo 補資料） | Bearer access token 呼叫 auth-service 的使用者資料 API（RFC 6750） |
 | 端點來源 | OIDC Discovery（`/.well-known/openid-configuration`） | 依 auth-service 文件明確設定，不讀 Discovery |
-| 實作 | `openid-client` | 不用任何 OIDC 函式庫，以 `fetch` 依 RFC 6749／7636／6750／7009／9207 實作 |
+| 實作 | `openid-client`（架在 `oauth4webapi` 上） | `oauth4webapi`，只用 OAuth 2.0 RFC 的函式（RFC 6749／7636／6750／7009／9207）；不用 `userInfoRequest`、`discoveryRequest`、ID token 驗證 |
 | 登出 | 撤銷 token；全站登出帶 `id_token_hint`（OIDC RP-Initiated Logout） | 撤銷 access token（RFC 7009）；沒有全站登出 |
 | 共通 | Authorization Code + PKCE S256 + state、`client_secret_basic`、同一個回呼、`roles` 來自 UserInfo、相同後台授權規則 | 同左 |
 
@@ -73,7 +73,7 @@ OAUTH2_PROMPT=consent
 
 auth-service 那邊註冊的 client 也要勾 `offline_access`。拿到 refresh token 後的行為與 `main` 相同：access token 剩不到 60 秒時，下一個後台請求自動換新（RFC 6749 §6）並重新呼叫使用者資料 API 同步角色；同一個 session 用 Redis 鎖只換一次；輪替的 refresh token 會換掉舊的；被拒絕就刪 session 要重新登入；auth-service 連不上回 `503`；登出撤銷 refresh token 與 access token。沒設定就維持原本行為（角色停在登入當下，直到 `SESSION_TTL_SECONDS` 到期）。
 
-**保證不混用 OIDC**：`test/unit/oauth2.test.ts` 檢查登入程式不 import 任何 OIDC 函式庫、授權網址不含 `openid`／nonce、收到 ID token 直接拒絕；`test/e2e/sso.test.ts` 記錄授權伺服器收到的每個請求，確認沒有碰 Discovery、JWKS、end_session。auth-service 的端點都在 `/oidc/` 前綴底下只是路徑命名，不帶 `openid` 的 token 呼叫 `/oidc/userinfo` 時，auth-service 走的是它自訂的 OAuth 使用者資料 API。
+**保證不混用 OIDC**：`oauth4webapi` 同時支援兩種協議，所以用法有限制：使用者資料用 `protectedResourceRequest`（RFC 6750）而非 OIDC 的 `userInfoRequest`；授權伺服器 metadata 手動組、不填 OIDC 欄位；token 回應帶 ID token 時，在交給 `oauth4webapi` 處理之前就拒絕（否則它會自動跑 OIDC 驗證）。`test/unit/oauth2.test.ts` 檢查登入程式不 import `openid-client`／`jose`、不呼叫 `oauth4webapi` 的 OIDC 函式、授權網址不含 `openid`／nonce、收到 ID token 直接拒絕；`test/e2e/sso.test.ts` 記錄授權伺服器收到的每個請求，確認沒有碰 Discovery、JWKS、end_session。auth-service 的端點都在 `/oidc/` 前綴底下只是路徑命名，不帶 `openid` 的 token 呼叫 `/oidc/userinfo` 時，auth-service 走的是它自訂的 OAuth 使用者資料 API。
 
 auth-service 的 `subject_type` 是 public，同一個使用者在兩個 client 拿到相同的 `sub`，兩個分支的資料可以用同一個主鍵對應。
 

@@ -21,14 +21,19 @@ describe('pure OAuth 2.0 login', () => {
   });
   afterEach(() => vi.unstubAllGlobals());
 
-  it('登入相關程式不 import 任何 OIDC 函式庫', () => {
+  it('登入相關程式只用 oauth4webapi 的 OAuth 2.0 功能，不用 OIDC 函式庫或 OIDC 功能', () => {
     const dir = join(import.meta.dirname, '../../src/api/auth');
     for (const f of readdirSync(dir)) {
       // 只看程式碼，註解裡說明「不做什麼」不算
       const src = readFileSync(join(dir, f), 'utf8')
         .replace(/\/\*[\s\S]*?\*\//g, '')
         .replace(/\/\/.*$/gm, '');
-      expect(src, f).not.toMatch(/from ['"](openid-client|oidc-provider|oauth4webapi|jose)['"]/);
+      // OIDC 函式庫（oauth4webapi 同時支援兩種協議，允許使用，但只能用 OAuth 2.0 的函式）
+      expect(src, f).not.toMatch(/from ['"](openid-client|oidc-provider|jose)['"]/);
+      // oauth4webapi 的 OIDC 功能：UserInfo、Discovery、ID token 驗證、nonce
+      expect(src, f).not.toMatch(
+        /\b(userInfoRequest|processUserInfoResponse|discoveryRequest|processDiscoveryResponse|getValidatedIdTokenClaims|validateApplicationLevelSignature|expectedNonce|generateRandomNonce|requireIdToken)\b/,
+      );
       expect(src, f).not.toMatch(/openid-configuration|end_session|id_token_hint|nonce=/);
     }
   });

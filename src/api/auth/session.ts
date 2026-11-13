@@ -11,6 +11,8 @@ export interface AdminSession {
   name: string | null;
   roles: string[];
   idToken?: string;
+  /** 只存在 Redis，登出時撤銷 */
+  accessToken?: string;
   csrf: string;
   createdAt: string;
   devBypass?: boolean;

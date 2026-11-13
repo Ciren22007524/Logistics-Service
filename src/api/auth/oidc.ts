@@ -73,6 +73,8 @@ export interface OidcUser {
   name: string | null;
   roles: string[];
   idToken: string | undefined;
+  /** 只存在後端 session（Redis），登出時撤銷 */
+  accessToken: string;
 }
 
 /** callback：比對 state、以 code + verifier 換 token、驗 ID token、取 UserInfo */
@@ -98,7 +100,22 @@ export async function finishLogin(callbackQuery: string, tx: LoginTransaction): 
     name: (info.name as string | undefined) ?? null,
     roles,
     idToken: tokens.id_token,
+    accessToken: tokens.access_token,
   };
+}
+
+/** 登出時撤銷 access token（RFC 7009，auth-service 的 revocation_endpoint）；盡力而為，失敗只記 log */
+export async function revokeAccessToken(accessToken: string | undefined): Promise<boolean> {
+  if (!accessToken) return false;
+  try {
+    const cfg = await oidcConfiguration();
+    if (!cfg.serverMetadata().revocation_endpoint) return false;
+    await client.tokenRevocation(cfg, accessToken, { token_type_hint: 'access_token' });
+    return true;
+  } catch (err) {
+    logger.warn({ err }, 'token revocation failed');
+    return false;
+  }
 }
 
 /** 全站登出網址（auth-service end_session_endpoint）；本站 session 由呼叫端清除 */

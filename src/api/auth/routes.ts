@@ -5,7 +5,7 @@ import { audit } from '../../infra/db/repositories.js';
 import { db } from '../../infra/db/pool.js';
 import { redis } from '../../infra/redis.js';
 import { HttpError } from '../../lib/errors.js';
-import { endSessionUrl, finishLogin, isAdminAllowed, startLogin, type LoginTransaction } from './oidc.js';
+import { endSessionUrl, finishLogin, isAdminAllowed, revokeAccessToken, startLogin, type LoginTransaction } from './oidc.js';
 import { createSession, destroySession, loadSession, loginTxCookieName } from './session.js';
 
 /** 只允許站內相對路徑，避免 open redirect */
@@ -73,6 +73,7 @@ export async function authRoutes(app: FastifyInstance) {
       name: user.name,
       roles: user.roles,
       idToken: user.idToken,
+      accessToken: user.accessToken,
     });
     await audit(db(), { actor: `admin:${user.email ?? user.sub}`, action: 'admin.login' });
     return reply.redirect(webUrl(tx.returnTo));
@@ -84,11 +85,12 @@ export async function authRoutes(app: FastifyInstance) {
     return { sub: s.sub, email: s.email, name: s.name, roles: s.roles, csrf_token: s.csrf, dev_bypass: Boolean(s.devBypass) };
   });
 
-  /** 登出本站；body.global=true 時回傳 auth-service 的 end_session 網址讓前端導過去 */
+  /** 登出本站並撤銷 access token；body.global=true 時另回傳 auth-service 的 end_session 網址讓前端導過去 */
   app.post<{ Body: { global?: boolean } | undefined }>('/auth/logout', async (req, reply) => {
     const s = await destroySession(req, reply);
     const global = Boolean(req.body && (req.body as { global?: boolean }).global);
+    const revoked = s && !s.devBypass ? await revokeAccessToken(s.accessToken) : false;
     const url = global && s && !s.devBypass ? await endSessionUrl(s.idToken) : null;
-    return { ok: true, end_session_url: url };
+    return { ok: true, token_revoked: revoked, end_session_url: url };
   });
 }

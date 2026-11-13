@@ -46,12 +46,26 @@ npm run dev                   # 建置前端後啟動後端（程式改動自動
 
 後台採 BFF 模式：授權碼交換與 token 都在後端，瀏覽器只拿 HttpOnly、SameSite=Lax 的 session cookie（存在 Redis）。
 
-1. 到 auth-service 的 `/register` 用 Google 登入，串接方式選**後端**（`client_secret_basic`），scope 勾 `email`、`profile`
+1. 到 auth-service 的 `/register` 用 Google 登入，串接方式選**後端**（`client_secret_basic`），scope 勾 `email`、`profile`、`offline_access`（沒勾就拿不到 refresh token；已註冊的 client 可在「我的子系統」修改 scope，修改會撤銷既有授權）
 2. 回呼網址填 `http://localhost:4310/auth/callback`（正式環境填 `https://<網域>/auth/callback`）；預設是 `PUBLIC_BASE_URL` + `/auth/callback`，必須完全一致
 3. 把 client ID／secret 填到 `.env` 的 `OIDC_CLIENT_ID`、`OIDC_CLIENT_SECRET`（secret 只放 `.env`／Secret 管理，不進版控）
 4. 設定誰能進後台：`ADMIN_EMAILS`（已驗證 email 白名單）或 `ADMIN_ROLES`（auth-service 管理者在該 client 設的 `roles`）。兩者都空時，非 production 放行所有登入者，production 一律拒絕
 
-流程：Authorization Code + PKCE S256、`state`／`nonce`；ID token 以 auth-service 的 JWKS 公鑰驗 RS256 簽章（`enableNonRepudiationChecks`，`openid-client` v6 預設不驗），並驗 issuer、audience、到期時間與 nonce，之後呼叫 `/oidc/userinfo` 取 `roles`。後台寫入 API 檢查 CSRF token 與 Origin。「登出」清本站 session 並撤銷 access token（`revocation_endpoint`）；「全站登出」再另外導向 auth-service 的 `end_session_endpoint`（帶 `id_token_hint`）。
+流程：Authorization Code + PKCE S256、`state`／`nonce`；ID token 以 auth-service 的 JWKS 公鑰驗 RS256 簽章（`enableNonRepudiationChecks`，`openid-client` v6 預設不驗），並驗 issuer、audience、到期時間與 nonce，之後呼叫 `/oidc/userinfo` 取 `roles`。後台寫入 API 檢查 CSRF token 與 Origin。「登出」清本站 session 並撤銷 refresh token 與 access token（`revocation_endpoint`）；「全站登出」再另外導向 auth-service 的 `end_session_endpoint`（帶 `id_token_hint`）。
+
+**Refresh token**：scope 含 `offline_access`（預設）時一併帶 `prompt=consent`，auth-service 才會發 refresh token。token 只存在後端 Redis session。
+
+| 情況 | 行為 |
+| --- | --- |
+| access token 剩不到 60 秒 | 下一個後台請求（或 `/auth/me`）自動用 refresh token 換新，並重新呼叫 UserInfo 同步角色、email |
+| 同一個 session 同時多個請求 | Redis 鎖保證只換一次；auth-service 會輪替 refresh token，重複使用舊的會被當成重放而撤銷整個授權 |
+| auth-service 輪替 refresh token | 存下新的，舊的不再使用 |
+| 角色被移除 | 下次換新時偵測到，刪 session、撤銷 refresh token，回 `403`（約一個 access token 效期內生效，預設 15 分鐘） |
+| refresh token 過期、被撤銷、帳號停用 | 刪 session，回 `401 session_expired`，要重新登入 |
+| auth-service 暫時連不上 | 回 `503`，不使用過期的角色放行 |
+| client 沒勾 `offline_access` | 照常登入，log 警告；角色維持登入當下，直到本站 session 到期（`SESSION_TTL_SECONDS`，預設 8 小時） |
+
+本站 session 的絕對期限仍是 `SESSION_TTL_SECONDS`，換新不會延長；auth-service 的 refresh token 期限（`REFRESH_TOKEN_TTL_SECONDS`，本機預設 1 小時）先到時就要重新登入。
 
 還沒註冊 client 時，本機可設 `AUTH_DEV_BYPASS=true` 直接以開發者身分登入（只在 `APP_ENV=development/test` 生效）。
 

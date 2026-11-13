@@ -63,7 +63,8 @@ const schema = z.object({
   OIDC_CLIENT_SECRET: z.string().default(''),
   /** 必須與 auth-service 註冊的回呼完全相同；預設 PUBLIC_BASE_URL + /auth/callback */
   OIDC_REDIRECT_URI: z.string().url().optional(),
-  OIDC_SCOPES: z.string().default('openid email profile'),
+  /** 含 offline_access 才會拿到 refresh token（auth-service client 也要勾 offline_access） */
+  OIDC_SCOPES: z.string().default('openid email profile offline_access'),
   /** 有在 auth-service 登記 post_logout_redirect_uris 才設定；未設時「全站登出」不帶導回 */
   OIDC_POST_LOGOUT_REDIRECT_URI: z.string().url().optional(),
   /** 允許進後台的 email（白名單）；與 ADMIN_ROLES 任一符合即可 */

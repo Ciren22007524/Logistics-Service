@@ -5,8 +5,8 @@ import { audit } from '../../infra/db/repositories.js';
 import { db } from '../../infra/db/pool.js';
 import { redis } from '../../infra/redis.js';
 import { HttpError } from '../../lib/errors.js';
-import { endSessionUrl, finishLogin, isAdminAllowed, revokeAccessToken, startLogin, type LoginTransaction } from './oidc.js';
-import { createSession, destroySession, loadSession, loginTxCookieName } from './session.js';
+import { endSessionUrl, finishLogin, isAdminAllowed, revokeToken, startLogin, type LoginTransaction } from './oidc.js';
+import { createSession, destroySession, ensureFreshSession, loadSession, loginTxCookieName } from './session.js';
 
 /** 只允許站內相對路徑，避免 open redirect */
 export function safeReturnTo(v: unknown): string {
@@ -74,23 +74,39 @@ export async function authRoutes(app: FastifyInstance) {
       roles: user.roles,
       idToken: user.idToken,
       accessToken: user.accessToken,
+      accessTokenExpiresAt: user.accessTokenExpiresAt,
+      refreshToken: user.refreshToken,
+      rolesCheckedAt: new Date().toISOString(),
     });
     await audit(db(), { actor: `admin:${user.email ?? user.sub}`, action: 'admin.login' });
     return reply.redirect(webUrl(tx.returnTo));
   });
 
-  app.get('/auth/me', async (req) => {
-    const s = await loadSession(req);
-    if (!s) throw new HttpError(401, 'unauthenticated', '未登入');
-    return { sub: s.sub, email: s.email, name: s.name, roles: s.roles, csrf_token: s.csrf, dev_bypass: Boolean(s.devBypass) };
+  app.get('/auth/me', async (req, reply) => {
+    const loaded = await loadSession(req);
+    if (!loaded) throw new HttpError(401, 'unauthenticated', '未登入');
+    // 前端每次載入都會打這支：順便換新 token、同步角色
+    const s = await ensureFreshSession(loaded, reply);
+    return {
+      sub: s.sub,
+      email: s.email,
+      name: s.name,
+      roles: s.roles,
+      csrf_token: s.csrf,
+      dev_bypass: Boolean(s.devBypass),
+      roles_checked_at: s.rolesCheckedAt ?? null,
+      auto_refresh: Boolean(s.refreshToken),
+    };
   });
 
   /** 登出本站並撤銷 access token；body.global=true 時另回傳 auth-service 的 end_session 網址讓前端導過去 */
   app.post<{ Body: { global?: boolean } | undefined }>('/auth/logout', async (req, reply) => {
     const s = await destroySession(req, reply);
     const global = Boolean(req.body && (req.body as { global?: boolean }).global);
-    const revoked = s && !s.devBypass ? await revokeAccessToken(s.accessToken) : false;
+    // 先撤銷 refresh token（整個授權鏈），再撤銷目前的 access token
+    const revokedRefresh = s && !s.devBypass ? await revokeToken(s.refreshToken, 'refresh_token') : false;
+    const revoked = s && !s.devBypass ? await revokeToken(s.accessToken, 'access_token') : false;
     const url = global && s && !s.devBypass ? await endSessionUrl(s.idToken) : null;
-    return { ok: true, token_revoked: revoked, end_session_url: url };
+    return { ok: true, token_revoked: revoked, refresh_token_revoked: revokedRefresh, end_session_url: url };
   });
 }

@@ -55,13 +55,16 @@ export async function startLogin(returnTo: string): Promise<{ url: string; tx: L
     verifier,
     returnTo,
   };
+  const scope = config().OIDC_SCOPES;
   const url = client.buildAuthorizationUrl(cfg, {
     redirect_uri: config().OIDC_REDIRECT_URI,
-    scope: config().OIDC_SCOPES,
+    scope,
     code_challenge: await client.calculatePKCECodeChallenge(verifier),
     code_challenge_method: 'S256',
     state: tx.state,
     nonce: tx.nonce,
+    // auth-service（oidc-provider）規定：申請 offline_access 必須帶 prompt=consent，否則會把 offline_access 拿掉、不發 refresh token
+    ...(wantsOfflineAccess(scope) ? { prompt: 'consent' } : {}),
   });
   return { url: url.toString(), tx };
 }
@@ -75,7 +78,19 @@ export interface OidcUser {
   idToken: string | undefined;
   /** 只存在後端 session（Redis），登出時撤銷 */
   accessToken: string;
+  /** access token 到期時間（epoch ms） */
+  accessTokenExpiresAt: number;
+  /** 有申請 offline_access 且 auth-service 核准時才有；只存在後端 session */
+  refreshToken: string | undefined;
 }
+
+const wantsOfflineAccess = (scope: string) => scope.split(/\s+/).includes('offline_access');
+
+const rolesOf = (info: Record<string, unknown>) =>
+  Array.isArray(info.roles) ? info.roles.filter((r): r is string => typeof r === 'string') : [];
+
+const expiresAtOf = (tokens: client.TokenEndpointResponse & client.TokenEndpointResponseHelpers) =>
+  Date.now() + (tokens.expiresIn() ?? 0) * 1000;
 
 /** callback：比對 state、以 code + verifier 換 token、驗 ID token、取 UserInfo */
 export async function finishLogin(callbackQuery: string, tx: LoginTransaction): Promise<OidcUser> {
@@ -92,25 +107,76 @@ export async function finishLogin(callbackQuery: string, tx: LoginTransaction): 
   const claims = tokens.claims();
   if (!claims) throw new Error('missing id_token');
   const info = await client.fetchUserInfo(cfg, tokens.access_token, claims.sub);
-  const roles = Array.isArray(info.roles) ? info.roles.filter((r): r is string => typeof r === 'string') : [];
+  if (wantsOfflineAccess(config().OIDC_SCOPES) && !tokens.refresh_token)
+    logger.warn(
+      'no refresh_token issued: check that the auth-service client has offline_access enabled (登入仍可用，但角色不會自動更新)',
+    );
   return {
     sub: claims.sub,
     email: (info.email as string | undefined) ?? (claims.email as string | undefined) ?? null,
     emailVerified: Boolean(info.email_verified ?? claims.email_verified),
     name: (info.name as string | undefined) ?? null,
-    roles,
+    roles: rolesOf(info),
     idToken: tokens.id_token,
     accessToken: tokens.access_token,
+    accessTokenExpiresAt: expiresAtOf(tokens),
+    refreshToken: tokens.refresh_token,
   };
 }
 
-/** 登出時撤銷 access token（RFC 7009，auth-service 的 revocation_endpoint）；盡力而為，失敗只記 log */
-export async function revokeAccessToken(accessToken: string | undefined): Promise<boolean> {
-  if (!accessToken) return false;
+export type RefreshResult =
+  | { kind: 'ok'; user: OidcUser }
+  /** refresh token 失效（過期、被撤銷、授權被收回）：要重新登入 */
+  | { kind: 'expired'; reason: string }
+  /** auth-service 暫時連不上或回 5xx：之後再試 */
+  | { kind: 'unavailable'; reason: string };
+
+/**
+ * 用 refresh token 換新的 access token，並重新取 UserInfo（角色、email、停用狀態都會同步）。
+ * auth-service 剩餘效期低於 30% 時會輪替 refresh token，有回傳新的就換掉舊的。
+ */
+export async function refreshTokens(refreshToken: string, expectedSub: string): Promise<RefreshResult> {
+  try {
+    const cfg = await oidcConfiguration();
+    const tokens = await client.refreshTokenGrant(cfg, refreshToken);
+    // 換新時若有回 ID token，openid-client 會驗簽章與 iss／aud／exp；sub 必須是同一個人
+    const claims = tokens.claims();
+    if (claims && claims.sub !== expectedSub) return { kind: 'expired', reason: 'sub changed' };
+    const info = await client.fetchUserInfo(cfg, tokens.access_token, expectedSub);
+    return {
+      kind: 'ok',
+      user: {
+        sub: expectedSub,
+        email: (info.email as string | undefined) ?? null,
+        emailVerified: Boolean(info.email_verified),
+        name: (info.name as string | undefined) ?? null,
+        roles: rolesOf(info),
+        idToken: tokens.id_token,
+        accessToken: tokens.access_token,
+        accessTokenExpiresAt: expiresAtOf(tokens),
+        refreshToken: tokens.refresh_token ?? refreshToken,
+      },
+    };
+  } catch (err) {
+    // OAuth 錯誤回應（invalid_grant 等）代表憑證或授權已失效；UserInfo 回 401 代表帳號被停用或授權被撤銷
+    if (err instanceof client.ResponseBodyError)
+      return { kind: 'expired', reason: err.error_description ? `${err.error}: ${err.error_description}` : err.error };
+    if (err instanceof client.WWWAuthenticateChallengeError) return { kind: 'expired', reason: 'userinfo rejected token' };
+    logger.warn({ err }, 'token refresh failed');
+    return { kind: 'unavailable', reason: (err as Error).message };
+  }
+}
+
+/** 登出時撤銷 token（RFC 7009，auth-service 的 revocation_endpoint）；盡力而為，失敗只記 log */
+export async function revokeToken(
+  token: string | undefined,
+  hint: 'access_token' | 'refresh_token' = 'access_token',
+): Promise<boolean> {
+  if (!token) return false;
   try {
     const cfg = await oidcConfiguration();
     if (!cfg.serverMetadata().revocation_endpoint) return false;
-    await client.tokenRevocation(cfg, accessToken, { token_type_hint: 'access_token' });
+    await client.tokenRevocation(cfg, token, { token_type_hint: hint });
     return true;
   } catch (err) {
     logger.warn({ err }, 'token revocation failed');

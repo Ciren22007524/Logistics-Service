@@ -51,7 +51,7 @@ npm run dev                   # 建置前端後啟動後端（程式改動自動
 3. 把 client ID／secret 填到 `.env` 的 `OIDC_CLIENT_ID`、`OIDC_CLIENT_SECRET`（secret 只放 `.env`／Secret 管理，不進版控）
 4. 設定誰能進後台：`ADMIN_EMAILS`（已驗證 email 白名單）或 `ADMIN_ROLES`（auth-service 管理者在該 client 設的 `roles`）。兩者都空時，非 production 放行所有登入者，production 一律拒絕
 
-流程：Authorization Code + PKCE S256、`state`／`nonce`；ID token 以 auth-service 的 JWKS 公鑰驗 RS256 簽章（`enableNonRepudiationChecks`，`openid-client` v6 預設不驗），並驗 issuer、audience、到期時間與 nonce，之後呼叫 `/oidc/userinfo` 取 `roles`。後台寫入 API 檢查 CSRF token 與 Origin。「登出」只清本站 session；「全站登出」另導向 auth-service 的 `end_session_endpoint`。
+流程：Authorization Code + PKCE S256、`state`／`nonce`；ID token 以 auth-service 的 JWKS 公鑰驗 RS256 簽章（`enableNonRepudiationChecks`，`openid-client` v6 預設不驗），並驗 issuer、audience、到期時間與 nonce，之後呼叫 `/oidc/userinfo` 取 `roles`。後台寫入 API 檢查 CSRF token 與 Origin。「登出」清本站 session 並撤銷 access token（`revocation_endpoint`）；「全站登出」再另外導向 auth-service 的 `end_session_endpoint`（帶 `id_token_hint`）。
 
 還沒註冊 client 時，本機可設 `AUTH_DEV_BYPASS=true` 直接以開發者身分登入（只在 `APP_ENV=development/test` 生效）。
 

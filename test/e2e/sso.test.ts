@@ -113,7 +113,8 @@ describe.skipIf(!DB || !REDIS)('OAuth 2.0 login', () => {
   it('登出：撤銷 access token（RFC 7009）；沒有 OIDC 全站登出', async () => {
     const { session } = await login();
     const r = (await app.inject({ method: 'POST', url: '/auth/logout', headers: { cookie: session! }, payload: { global: true } })).json();
-    expect(r).toEqual({ ok: true, token_revoked: true });
+    // 預設設定沒申請 refresh token
+    expect(r).toEqual({ ok: true, token_revoked: true, refresh_token_revoked: false });
     expect(as.revoked).toContain('logistics-oauth2');
     expect((await app.inject({ method: 'GET', url: '/auth/me', headers: { cookie: session! } })).statusCode).toBe(401);
   });

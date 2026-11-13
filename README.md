@@ -64,6 +64,15 @@ npm run dev                   # 建置前端後啟動後端（程式改動自動
 3. 把 client ID／secret 填到 `.env` 的 `OAUTH2_CLIENT_ID`、`OAUTH2_CLIENT_SECRET`（secret 只放 `.env`／Secret 管理，不進版控）
 4. 設定誰能進後台：`ADMIN_EMAILS`（已驗證 email 白名單）或 `ADMIN_ROLES`（auth-service 管理者在該 client 設的 `roles`）。兩者都空時，非 production 放行所有登入者，production 一律拒絕
 
+**Refresh token（預設關閉，由設定決定）**：OAuth 2.0 沒規定怎麼申請 refresh token；auth-service 的條件是 scope 含 `offline_access` 且帶 `prompt=consent`（名稱來自 OIDC 規格），所以程式不寫死，要用時自己在 `.env` 設：
+
+```
+OAUTH2_SCOPES=email profile offline_access
+OAUTH2_PROMPT=consent
+```
+
+auth-service 那邊註冊的 client 也要勾 `offline_access`。拿到 refresh token 後的行為與 `main` 相同：access token 剩不到 60 秒時，下一個後台請求自動換新（RFC 6749 §6）並重新呼叫使用者資料 API 同步角色；同一個 session 用 Redis 鎖只換一次；輪替的 refresh token 會換掉舊的；被拒絕就刪 session 要重新登入；auth-service 連不上回 `503`；登出撤銷 refresh token 與 access token。沒設定就維持原本行為（角色停在登入當下，直到 `SESSION_TTL_SECONDS` 到期）。
+
 **保證不混用 OIDC**：`test/unit/oauth2.test.ts` 檢查登入程式不 import 任何 OIDC 函式庫、授權網址不含 `openid`／nonce、收到 ID token 直接拒絕；`test/e2e/sso.test.ts` 記錄授權伺服器收到的每個請求，確認沒有碰 Discovery、JWKS、end_session。auth-service 的端點都在 `/oidc/` 前綴底下只是路徑命名，不帶 `openid` 的 token 呼叫 `/oidc/userinfo` 時，auth-service 走的是它自訂的 OAuth 使用者資料 API。
 
 auth-service 的 `subject_type` 是 public，同一個使用者在兩個 client 拿到相同的 `sub`，兩個分支的資料可以用同一個主鍵對應。

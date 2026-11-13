@@ -65,6 +65,11 @@ const schema = z.object({
   OAUTH2_CLIENT_SECRET: z.string().default(''),
   /** 不含 openid；就算設定裡寫了也會被拿掉 */
   OAUTH2_SCOPES: z.string().default('email profile'),
+  /**
+   * 授權請求的 prompt 參數；未設定就不送。
+   * 要 auth-service 發 refresh token：OAUTH2_SCOPES 加 offline_access，且這裡設 consent
+   */
+  OAUTH2_PROMPT: z.string().optional(),
   /** 端點：預設照 auth-service「純 OAuth 2.0 串接」文件（OIDC_ISSUER + /oidc/auth 等），不使用 OIDC Discovery */
   OAUTH2_AUTHORIZATION_ENDPOINT: z.string().url().optional(),
   OAUTH2_TOKEN_ENDPOINT: z.string().url().optional(),
